@@ -2640,6 +2640,8 @@ def fusion_framework_hints(spec: FusionPatternSpec) -> set[str]:
 def pattern_supports_framework(
     spec: FusionPatternSpec, framework: Optional[str]
 ) -> bool:
+    if not framework:
+        return True
     normalized = normalize_text(framework).lower()
     if not normalized or normalized == "auto":
         return True

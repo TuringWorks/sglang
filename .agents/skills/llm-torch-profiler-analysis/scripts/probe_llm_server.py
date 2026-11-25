@@ -162,7 +162,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
 
     for request_idx in range(args.requests):
         prompt = prompts[request_idx % len(prompts)]
-        start = time.time()
+        start = time.monotonic()
         try:
             if args.framework == "sglang":
                 text = sglang_request(
@@ -183,7 +183,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 )
                 text = result["text"]
                 source = result["source"]
-            elapsed = time.time() - start
+            elapsed = time.monotonic() - start
             latencies.append(elapsed)
             samples.append(
                 {

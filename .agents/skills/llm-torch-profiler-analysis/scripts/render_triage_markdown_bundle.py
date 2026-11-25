@@ -87,7 +87,7 @@ def framework_label(framework_key: str) -> str:
 
 def discover_analysis_files(root: Path) -> List[Tuple[str, Path]]:
     entries: List[Tuple[str, Path]] = []
-    for path in sorted(root.rglob("analysis*.txt")):
+    for path in sorted(root.rglob("analysis_*.txt")):
         entries.append((path.parent.name, path))
     return entries
 

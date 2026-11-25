@@ -86,6 +86,8 @@ KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 1167552, KV size: 15
 
 ```python
 def optimal_ratio(L, state_bytes_per_slot, kv_bytes_per_token, S, D=0, dcp_size=1):
+    if L <= 0:
+        raise ValueError("L must be positive")
     token_equiv = state_bytes_per_slot / kv_bytes_per_token
     r = (S + D) * token_equiv * dcp_size / L
     return r  # value of --mamba-full-memory-ratio (>1 is legal)
@@ -93,8 +95,8 @@ def optimal_ratio(L, state_bytes_per_slot, kv_bytes_per_token, S, D=0, dcp_size=
 def predict_clamp(rest_bytes, r, state_bytes_per_slot, S, D=0):
     mamba_budget = rest_bytes * r / (1 + r)
     slots = mamba_budget / state_bytes_per_slot
-    # spec: each running req reserves (S+D) worth; non-spec just S
-    return int(slots // S)  # NOSPEC; with spec the budget joint-solves for (S+D)·per_req per req
+    # Each running request reserves S+D slots when speculative decoding is enabled.
+    return int(slots // (S + D))
 ```
 
 Then state the result three ways: the **`r` value**, the **predicted clamp** (if `rest` given), and **which pool binds** (`min(mamba_clamp, KV_cap)`, where `KV_cap = kv_tokens · dcp_size / L`).

@@ -27,8 +27,9 @@ Ask the user for the brand logo (SVG preferred → crisp + already transparent; 
 transparent PNG, or a link to the official press/brand asset). Prefer an **icon-only** source;
 if they only have a full lockup, ask them to crop the glyph, or crop it yourself.
 
-If the user **pasted** an image inline, it may not be on disk — recover the base64 `image`
-block from the session transcript (`~/.claude/projects/<slug>/*.jsonl`) and decode it to a file.
+If the user **pasted** an image inline and it is not available as a workspace file, ask them
+to upload it explicitly before continuing. Do not read session transcripts or other
+conversation-history files to recover image data.
 
 ## 2. Generate (Pillow)
 

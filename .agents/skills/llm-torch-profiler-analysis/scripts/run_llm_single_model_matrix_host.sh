@@ -59,29 +59,51 @@ TRT_OVERRIDE_ROOT="/data/bbuf/validate/unified_llm_profiler_skill/overrides/trtl
 TRT_OVERRIDE_SOURCE="$TRT_OVERRIDE_ROOT/py_executor.original.py"
 TRT_OVERRIDE_PATH="$TRT_OVERRIDE_ROOT/py_executor_with_stack.py"
 
+require_option_value() {
+  if [[ $# -lt 2 || -z "${2:-}" ]]; then
+    echo "Missing value for $1." >&2
+    usage >&2
+    exit 2
+  fi
+}
+
+validate_port() {
+  if [[ ! "$2" =~ ^[0-9]+$ ]] || (( 10#$2 < 1 || 10#$2 > 65535 )); then
+    echo "$1 must be an integer between 1 and 65535: $2" >&2
+    exit 2
+  fi
+}
+
+validate_fraction() {
+  if [[ ! "$2" =~ ^(0([.][0-9]+)?|1([.][0-9]+)?)$ ]]; then
+    echo "$1 must be a number between 0 and 1: $2" >&2
+    exit 2
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --model-id) MODEL_ID="$2"; shift 2 ;;
-    --model) MODEL="$2"; shift 2 ;;
-    --root) ROOT="$2"; shift 2 ;;
-    --gpus) GPUS="$2"; shift 2 ;;
-    --tp-size) TP_SIZE="$2"; shift 2 ;;
-    --sglang-port) SGLANG_PORT="$2"; shift 2 ;;
-    --vllm-formal-port) VLLM_FORMAL_PORT="$2"; shift 2 ;;
-    --vllm-mapping-port) VLLM_MAPPING_PORT="$2"; shift 2 ;;
-    --trt-formal-prefill-port) TRT_FORMAL_PREFILL_PORT="$2"; shift 2 ;;
-    --trt-formal-decode-port) TRT_FORMAL_DECODE_PORT="$2"; shift 2 ;;
-    --trt-mapping-prefill-port) TRT_MAPPING_PREFILL_PORT="$2"; shift 2 ;;
-    --trt-mapping-decode-port) TRT_MAPPING_DECODE_PORT="$2"; shift 2 ;;
-    --sglang-mem-fraction) SGLANG_MEM_FRACTION="$2"; shift 2 ;;
-    --sglang-server-extra) SGLANG_SERVER_EXTRA="$2"; shift 2 ;;
-    --max-model-len) MAX_MODEL_LEN="$2"; shift 2 ;;
-    --kv-fraction) KV_FRACTION="$2"; shift 2 ;;
-    --profile-workload) PROFILE_WORKLOAD="$2"; shift 2 ;;
-    --prefill-input-len) PREFILL_INPUT_LEN="$2"; shift 2 ;;
-    --prefill-output-len) PREFILL_OUTPUT_LEN="$2"; shift 2 ;;
-    --decode-input-len) DECODE_INPUT_LEN="$2"; shift 2 ;;
-    --decode-output-len) DECODE_OUTPUT_LEN="$2"; shift 2 ;;
+    --model-id) require_option_value "$@"; MODEL_ID="$2"; shift 2 ;;
+    --model) require_option_value "$@"; MODEL="$2"; shift 2 ;;
+    --root) require_option_value "$@"; ROOT="$2"; shift 2 ;;
+    --gpus) require_option_value "$@"; GPUS="$2"; shift 2 ;;
+    --tp-size) require_option_value "$@"; TP_SIZE="$2"; shift 2 ;;
+    --sglang-port) require_option_value "$@"; SGLANG_PORT="$2"; shift 2 ;;
+    --vllm-formal-port) require_option_value "$@"; VLLM_FORMAL_PORT="$2"; shift 2 ;;
+    --vllm-mapping-port) require_option_value "$@"; VLLM_MAPPING_PORT="$2"; shift 2 ;;
+    --trt-formal-prefill-port) require_option_value "$@"; TRT_FORMAL_PREFILL_PORT="$2"; shift 2 ;;
+    --trt-formal-decode-port) require_option_value "$@"; TRT_FORMAL_DECODE_PORT="$2"; shift 2 ;;
+    --trt-mapping-prefill-port) require_option_value "$@"; TRT_MAPPING_PREFILL_PORT="$2"; shift 2 ;;
+    --trt-mapping-decode-port) require_option_value "$@"; TRT_MAPPING_DECODE_PORT="$2"; shift 2 ;;
+    --sglang-mem-fraction) require_option_value "$@"; SGLANG_MEM_FRACTION="$2"; shift 2 ;;
+    --sglang-server-extra) require_option_value "$@"; SGLANG_SERVER_EXTRA="$2"; shift 2 ;;
+    --max-model-len) require_option_value "$@"; MAX_MODEL_LEN="$2"; shift 2 ;;
+    --kv-fraction) require_option_value "$@"; KV_FRACTION="$2"; shift 2 ;;
+    --profile-workload) require_option_value "$@"; PROFILE_WORKLOAD="$2"; shift 2 ;;
+    --prefill-input-len) require_option_value "$@"; PREFILL_INPUT_LEN="$2"; shift 2 ;;
+    --prefill-output-len) require_option_value "$@"; PREFILL_OUTPUT_LEN="$2"; shift 2 ;;
+    --decode-input-len) require_option_value "$@"; DECODE_INPUT_LEN="$2"; shift 2 ;;
+    --decode-output-len) require_option_value "$@"; DECODE_OUTPUT_LEN="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *)
       echo "Unknown argument: $1" >&2
@@ -114,6 +136,16 @@ for value in \
   fi
 done
 
+validate_port --sglang-port "$SGLANG_PORT"
+validate_port --vllm-formal-port "$VLLM_FORMAL_PORT"
+validate_port --vllm-mapping-port "$VLLM_MAPPING_PORT"
+validate_port --trt-formal-prefill-port "$TRT_FORMAL_PREFILL_PORT"
+validate_port --trt-formal-decode-port "$TRT_FORMAL_DECODE_PORT"
+validate_port --trt-mapping-prefill-port "$TRT_MAPPING_PREFILL_PORT"
+validate_port --trt-mapping-decode-port "$TRT_MAPPING_DECODE_PORT"
+validate_fraction --sglang-mem-fraction "$SGLANG_MEM_FRACTION"
+validate_fraction --kv-fraction "$KV_FRACTION"
+
 IFS=',' read -r -a GPU_LIST <<< "$GPUS"
 GPU_COUNT="${#GPU_LIST[@]}"
 if [[ "$GPU_COUNT" -lt 1 ]]; then
@@ -123,7 +155,7 @@ fi
 if [[ -z "$TP_SIZE" ]]; then
   TP_SIZE="$GPU_COUNT"
 fi
-if (( TP_SIZE < 1 || TP_SIZE > GPU_COUNT )); then
+if [[ ! "$TP_SIZE" =~ ^[0-9]+$ ]] || (( TP_SIZE < 1 || TP_SIZE > GPU_COUNT )); then
   echo "--tp-size must be between 1 and the visible GPU count ($GPU_COUNT)." >&2
   exit 2
 fi
