@@ -155,6 +155,10 @@ if [[ -z "$MODEL" || -z "$RUN_DIR" || -z "$PORT" || -z "$GPUS" ]]; then
   usage >&2
   exit 2
 fi
+if [[ ! "$PORT" =~ ^[0-9]+$ ]] || (( 10#$PORT < 1 || 10#$PORT > 65535 )); then
+  echo "--port must be an integer between 1 and 65535: $PORT" >&2
+  exit 2
+fi
 
 IFS=',' read -r -a GPU_LIST <<< "$GPUS"
 GPU_COUNT="${#GPU_LIST[@]}"
@@ -176,18 +180,44 @@ PROFILE_ROOT="$RUN_DIR/sglang_profile_live"
 BENCHMARK_PATH="$RUN_DIR/benchmark_sglang.json"
 PID_PATH="$RUN_DIR/sglang_server.pid"
 LAUNCH_PATTERN="[s]glang.launch_server.*--port $PORT"
-SERVER_ARGS="python3 -m sglang.launch_server --model-path \"$MODEL\" --port \"$PORT\" --tp-size \"$TP_SIZE\" --mem-fraction-static \"$MEM_FRACTION\""
 
-if [[ "$TRUST_REMOTE_CODE" -eq 1 ]]; then
-  SERVER_ARGS="$SERVER_ARGS --trust-remote-code"
-fi
-if [[ -n "$SERVER_EXTRA" ]]; then
-  SERVER_ARGS="$SERVER_ARGS $SERVER_EXTRA"
-fi
-
-docker exec sglang_bbuf bash -lc "mkdir -p '$RUN_DIR' '$PROFILE_ROOT'"
+docker exec \
+  -e RUN_DIR="$RUN_DIR" \
+  -e PROFILE_ROOT="$PROFILE_ROOT" \
+  sglang_bbuf bash -lc 'mkdir -p "$RUN_DIR" "$PROFILE_ROOT"'
 docker exec sglang_bbuf bash -lc "pkill -f '$LAUNCH_PATTERN' >/dev/null 2>&1 || true"
-docker exec sglang_bbuf bash -lc "mkdir -p '$RUN_DIR' '$PROFILE_ROOT' && cd '$SGLANG_REPO_DIR' && rm -f '$PID_PATH' && (CUDA_VISIBLE_DEVICES=$GPUS PYTHONPATH=python nohup $SERVER_ARGS > '$LOG_PATH' 2>&1 < /dev/null & echo \$! > '$PID_PATH')"
+docker exec \
+  -e RUN_DIR="$RUN_DIR" \
+  -e PROFILE_ROOT="$PROFILE_ROOT" \
+  -e SGLANG_REPO_DIR="$SGLANG_REPO_DIR" \
+  -e PID_PATH="$PID_PATH" \
+  -e LOG_PATH="$LOG_PATH" \
+  -e GPUS="$GPUS" \
+  -e MODEL="$MODEL" \
+  -e PORT="$PORT" \
+  -e TP_SIZE="$TP_SIZE" \
+  -e MEM_FRACTION="$MEM_FRACTION" \
+  -e SERVER_EXTRA="$SERVER_EXTRA" \
+  -e TRUST_REMOTE_CODE="$TRUST_REMOTE_CODE" \
+  sglang_bbuf bash -lc '
+    server_args=(python3 -m sglang.launch_server
+      --model-path "$MODEL"
+      --port "$PORT"
+      --tp-size "$TP_SIZE"
+      --mem-fraction-static "$MEM_FRACTION")
+    if [[ "$TRUST_REMOTE_CODE" -eq 1 ]]; then
+      server_args+=(--trust-remote-code)
+    fi
+    if [[ -n "$SERVER_EXTRA" ]]; then
+      read -r -a extra_args <<< "$SERVER_EXTRA"
+      server_args+=("${extra_args[@]}")
+    fi
+    mkdir -p "$RUN_DIR" "$PROFILE_ROOT"
+    cd "$SGLANG_REPO_DIR"
+    rm -f "$PID_PATH"
+    (CUDA_VISIBLE_DEVICES="$GPUS" PYTHONPATH=python nohup "${server_args[@]}" \
+      >"$LOG_PATH" 2>&1 < /dev/null & echo $! >"$PID_PATH")
+  '
 
 cleanup() {
   docker exec sglang_bbuf bash -lc "pkill -f '$LAUNCH_PATTERN' >/dev/null 2>&1 || true" >/dev/null 2>&1 || true
@@ -204,7 +234,8 @@ for _ in $(seq 1 180); do
 done
 if [[ "$ready" -ne 1 ]]; then
   echo "SGLang server did not become ready on port ${PORT}. Recent logs:" >&2
-  ssh_log=$(docker exec sglang_bbuf bash -lc "tail -n 120 '$LOG_PATH'" 2>/dev/null || true)
+  ssh_log=$(docker exec -e LOG_PATH="$LOG_PATH" sglang_bbuf \
+    bash -lc 'tail -n 120 "$LOG_PATH"' 2>/dev/null || true)
   printf '%s\n' "$ssh_log" >&2
   exit 1
 fi
@@ -232,10 +263,39 @@ text = body.get("text", "")
 print(text[:400])
 PY
 
-docker exec sglang_bbuf bash -lc "cd '$SCRIPT_DIR' && python3 analyze_llm_torch_profile.py --framework sglang --url http://127.0.0.1:${PORT} --output-dir '$PROFILE_ROOT' --num-steps 5 --warmup-steps '$WARMUP_STEPS' --probe-requests 1 --profile-by-stage --profile-workload '$PROFILE_WORKLOAD' --prefill-input-len '$PREFILL_INPUT_LEN' --prefill-output-len '$PREFILL_OUTPUT_LEN' --decode-input-len '$DECODE_INPUT_LEN' --decode-output-len '$DECODE_OUTPUT_LEN' > '$ANALYSIS_PATH'"
+docker exec \
+  -e SCRIPT_DIR="$SCRIPT_DIR" \
+  -e PORT="$PORT" \
+  -e PROFILE_ROOT="$PROFILE_ROOT" \
+  -e ANALYSIS_PATH="$ANALYSIS_PATH" \
+  -e WARMUP_STEPS="$WARMUP_STEPS" \
+  -e PROFILE_WORKLOAD="$PROFILE_WORKLOAD" \
+  -e PREFILL_INPUT_LEN="$PREFILL_INPUT_LEN" \
+  -e PREFILL_OUTPUT_LEN="$PREFILL_OUTPUT_LEN" \
+  -e DECODE_INPUT_LEN="$DECODE_INPUT_LEN" \
+  -e DECODE_OUTPUT_LEN="$DECODE_OUTPUT_LEN" \
+  sglang_bbuf bash -lc '
+    cd "$SCRIPT_DIR"
+    python3 analyze_llm_torch_profile.py \
+      --framework sglang \
+      --url "http://127.0.0.1:$PORT" \
+      --output-dir "$PROFILE_ROOT" \
+      --num-steps 5 \
+      --warmup-steps "$WARMUP_STEPS" \
+      --probe-requests 1 \
+      --profile-by-stage \
+      --profile-workload "$PROFILE_WORKLOAD" \
+      --prefill-input-len "$PREFILL_INPUT_LEN" \
+      --prefill-output-len "$PREFILL_OUTPUT_LEN" \
+      --decode-input-len "$DECODE_INPUT_LEN" \
+      --decode-output-len "$DECODE_OUTPUT_LEN" \
+      >"$ANALYSIS_PATH"
+  '
 python3 "$SCRIPT_DIR/probe_llm_server.py" \
   --framework sglang \
   --url "http://127.0.0.1:${PORT}" \
-  | docker exec -i sglang_bbuf bash -lc "cat > '$BENCHMARK_PATH'" >/dev/null
-docker exec sglang_bbuf bash -lc "sed -n '1,240p' '$ANALYSIS_PATH'"
+  | docker exec -i -e BENCHMARK_PATH="$BENCHMARK_PATH" sglang_bbuf \
+      bash -lc 'cat > "$BENCHMARK_PATH"' >/dev/null
+docker exec -e ANALYSIS_PATH="$ANALYSIS_PATH" sglang_bbuf \
+  bash -lc 'sed -n "1,240p" "$ANALYSIS_PATH"'
 echo "BENCHMARK_PATH=$BENCHMARK_PATH"
