@@ -197,6 +197,7 @@ fi
 if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}" ]]; then
   HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
 fi
+export HF_TOKEN HUGGINGFACE_HUB_TOKEN
 
 if [[ -z "$MODEL" || -z "$RUN_DIR" || -z "$STAGE" || -z "$PORT" || -z "$GPUS" ]]; then
   usage >&2
@@ -272,14 +273,14 @@ if [[ -z "$CONTAINER_NAME" ]]; then
   CONTAINER_NAME="trtllm-${model_slug}-${STAGE}-g${gpu_slug}-p${PORT}"
 fi
 
-EXTRA_LLM_OPTIONS=""
 if [[ "$DISABLE_CUDAGRAPH" -eq 1 ]]; then
   EXTRA_CFG_PATH="$SHARED_ROOT/tmp/trt_no_cudagraph.yaml"
-  docker exec sglang_bbuf bash -lc "mkdir -p '$(dirname "$EXTRA_CFG_PATH")' && printf 'cuda_graph_config: null\n' > '$EXTRA_CFG_PATH'"
-  EXTRA_LLM_OPTIONS="--extra_llm_api_options $EXTRA_CFG_PATH"
+  EXTRA_CFG_DIR="${EXTRA_CFG_PATH%/*}"
+  docker exec -e EXTRA_CFG_DIR="$EXTRA_CFG_DIR" -e EXTRA_CFG_PATH="$EXTRA_CFG_PATH" \
+    sglang_bbuf bash -lc 'mkdir -p "$EXTRA_CFG_DIR" && printf "cuda_graph_config: null\\n" > "$EXTRA_CFG_PATH"'
 fi
 
-docker exec sglang_bbuf bash -lc "mkdir -p '$RUN_DIR'"
+docker exec -e RUN_DIR="$RUN_DIR" sglang_bbuf bash -lc 'mkdir -p "$RUN_DIR"'
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
 docker_args=(
@@ -290,8 +291,8 @@ docker_args=(
   --network host
   --entrypoint bash
   -e "CUDA_VISIBLE_DEVICES=$GPUS"
-  -e "HF_TOKEN=$HF_TOKEN"
-  -e "HUGGINGFACE_HUB_TOKEN=$HUGGINGFACE_HUB_TOKEN"
+  -e HF_TOKEN
+  -e HUGGINGFACE_HUB_TOKEN
   -e "TLLM_PROFILE_START_STOP=$PROFILE_START_STOP"
   -e "TLLM_LLMAPI_ENABLE_NVTX=1"
   -e "TLLM_TORCH_PROFILE_TRACE=$TRACE_PATH"
@@ -309,24 +310,33 @@ if [[ -n "$OVERRIDE_PY_EXECUTOR" ]]; then
   )
 fi
 
-trust_remote_code_arg=""
-if [[ "$TRUST_REMOTE_CODE" -eq 1 ]]; then
-  trust_remote_code_arg="--trust_remote_code"
-fi
+docker_args+=(
+  -e TP_SIZE="$TP_SIZE"
+  -e GPU_COUNT="$GPU_COUNT"
+  -e MAX_SEQ_LEN="$MAX_SEQ_LEN"
+  -e KV_FRACTION="$KV_FRACTION"
+  -e TRUST_REMOTE_CODE="$TRUST_REMOTE_CODE"
+  -e EXTRA_CFG_PATH="${EXTRA_CFG_PATH:-}"
+)
 
-container_cmd=$(
-  cat <<EOF
-mkdir -p "$RUN_DIR" && trtllm-serve serve "$MODEL" \
-  --backend pytorch \
-  --tp_size "$TP_SIZE" \
-  --gpus_per_node "$GPU_COUNT" \
-  --host 0.0.0.0 \
-  --port "$PORT" \
-  --max_seq_len "$MAX_SEQ_LEN" \
-  --kv_cache_free_gpu_memory_fraction "$KV_FRACTION" \
-  $trust_remote_code_arg \
-  $EXTRA_LLM_OPTIONS \
-  > "$LOG_PATH" 2>&1
+container_cmd=$(cat <<'EOF'
+set -euo pipefail
+serve_args=(trtllm-serve serve "$MODEL_ID"
+  --backend pytorch
+  --tp_size "$TP_SIZE"
+  --gpus_per_node "$GPU_COUNT"
+  --host 0.0.0.0
+  --port "$SERVE_PORT"
+  --max_seq_len "$MAX_SEQ_LEN"
+  --kv_cache_free_gpu_memory_fraction "$KV_FRACTION")
+if [[ "$TRUST_REMOTE_CODE" -eq 1 ]]; then
+  serve_args+=(--trust_remote_code)
+fi
+if [[ -n "$EXTRA_CFG_PATH" ]]; then
+  serve_args+=(--extra_llm_api_options "$EXTRA_CFG_PATH")
+fi
+mkdir -p "$RUN_DIR"
+"${serve_args[@]}" >"$LOG_PATH" 2>&1
 EOF
 )
 
@@ -400,7 +410,8 @@ python3 "$SCRIPT_DIR/probe_llm_server.py" \
   --framework trtllm \
   --url "http://127.0.0.1:${PORT}" \
   --model "$MODEL" \
-  | docker exec -i sglang_bbuf bash -lc "cat > '$BENCHMARK_PATH'" >/dev/null
+  | docker exec -i -e BENCHMARK_PATH="$BENCHMARK_PATH" sglang_bbuf \
+      bash -lc 'cat > "$BENCHMARK_PATH"' >/dev/null
 
 echo "TRACE_PATH=$TRACE_PATH"
 echo "LOG_PATH=$LOG_PATH"
