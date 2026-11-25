@@ -143,7 +143,7 @@ def _delegate_stub_attr(tree: ast.AST, name: str) -> tuple[str, str] | None:
             and node.body[0].value.func.value.value.id == "self"
         ):
             return (node.body[0].value.func.value.attr, node.body[0].value.func.attr)
-        return None
+        continue
     return None
 
 
