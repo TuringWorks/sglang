@@ -123,6 +123,7 @@ fi
 if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}" ]]; then
   HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
 fi
+export HF_TOKEN HUGGINGFACE_HUB_TOKEN
 
 for value in \
   MODEL_ID MODEL ROOT GPUS \
@@ -169,17 +170,29 @@ TRT_FORMAL_DIR="$MODEL_ROOT/trtllm_formal"
 TRT_MAPPING_DIR="$MODEL_ROOT/trtllm_mapping"
 TRT_ANALYSIS="$MODEL_ROOT/analysis_trtllm.txt"
 
-docker exec sglang_bbuf bash -lc "mkdir -p '$MODEL_ROOT'"
+docker exec -e MODEL_ROOT="$MODEL_ROOT" sglang_bbuf \
+  bash -lc 'mkdir -p "$MODEL_ROOT"'
 
 if [[ ! -s "$TRT_OVERRIDE_SOURCE" ]]; then
   echo "[bootstrap] TensorRT-LLM py_executor source snapshot"
-  docker exec sglang_bbuf bash -lc "mkdir -p '$TRT_OVERRIDE_ROOT'"
+  docker exec -e TRT_OVERRIDE_ROOT="$TRT_OVERRIDE_ROOT" sglang_bbuf \
+    bash -lc 'mkdir -p "$TRT_OVERRIDE_ROOT"'
   docker run --rm --entrypoint cat "$TRT_IMAGE" \
     /usr/local/lib/python3.12/dist-packages/tensorrt_llm/_torch/pyexecutor/py_executor.py \
-    | docker exec -i sglang_bbuf bash -lc "cat > '$TRT_OVERRIDE_SOURCE'"
+    | docker exec -i -e TRT_OVERRIDE_SOURCE="$TRT_OVERRIDE_SOURCE" sglang_bbuf \
+        bash -lc 'cat > "$TRT_OVERRIDE_SOURCE"'
 fi
 echo "[bootstrap] TensorRT-LLM py_executor override with with_stack=True and rank0-only trace export"
-docker exec sglang_bbuf bash -lc "cd '$SCRIPT_DIR' && python3 make_trtllm_py_executor_override.py --source '$TRT_OVERRIDE_SOURCE' --output '$TRT_OVERRIDE_PATH'"
+docker exec \
+  -e SCRIPT_DIR="$SCRIPT_DIR" \
+  -e TRT_OVERRIDE_SOURCE="$TRT_OVERRIDE_SOURCE" \
+  -e TRT_OVERRIDE_PATH="$TRT_OVERRIDE_PATH" \
+  sglang_bbuf bash -lc '
+    cd "$SCRIPT_DIR"
+    python3 make_trtllm_py_executor_override.py \
+      --source "$TRT_OVERRIDE_SOURCE" \
+      --output "$TRT_OVERRIDE_PATH"
+  '
 
 sglang_args=(
   --model "$MODEL"
@@ -239,7 +252,19 @@ HF_TOKEN="$HF_TOKEN" HUGGINGFACE_HUB_TOKEN="$HUGGINGFACE_HUB_TOKEN" \
   --enforce-eager
 
 echo "[4/6] vLLM mapping-formal analysis"
-docker exec sglang_bbuf bash -lc "cd '$SCRIPT_DIR' && python3 analyze_llm_torch_profile.py --framework vllm --mapping-input '$VLLM_MAPPING_DIR' --formal-input '$VLLM_FORMAL_DIR' > '$VLLM_ANALYSIS'"
+docker exec \
+  -e SCRIPT_DIR="$SCRIPT_DIR" \
+  -e VLLM_MAPPING_DIR="$VLLM_MAPPING_DIR" \
+  -e VLLM_FORMAL_DIR="$VLLM_FORMAL_DIR" \
+  -e VLLM_ANALYSIS="$VLLM_ANALYSIS" \
+  sglang_bbuf bash -lc '
+    cd "$SCRIPT_DIR"
+    python3 analyze_llm_torch_profile.py \
+      --framework vllm \
+      --mapping-input "$VLLM_MAPPING_DIR" \
+      --formal-input "$VLLM_FORMAL_DIR" \
+      >"$VLLM_ANALYSIS"
+  '
 
 echo "[5/6] TensorRT-LLM formal + mapping captures"
 HF_TOKEN="$HF_TOKEN" HUGGINGFACE_HUB_TOKEN="$HUGGINGFACE_HUB_TOKEN" \
@@ -298,7 +323,19 @@ HF_TOKEN="$HF_TOKEN" HUGGINGFACE_HUB_TOKEN="$HUGGINGFACE_HUB_TOKEN" \
   --trust-remote-code
 
 echo "[6/6] TensorRT-LLM mapping-formal analysis"
-docker exec sglang_bbuf bash -lc "cd '$SCRIPT_DIR' && python3 analyze_llm_torch_profile.py --framework trtllm --mapping-input '$TRT_MAPPING_DIR' --formal-input '$TRT_FORMAL_DIR' > '$TRT_ANALYSIS'"
+docker exec \
+  -e SCRIPT_DIR="$SCRIPT_DIR" \
+  -e TRT_MAPPING_DIR="$TRT_MAPPING_DIR" \
+  -e TRT_FORMAL_DIR="$TRT_FORMAL_DIR" \
+  -e TRT_ANALYSIS="$TRT_ANALYSIS" \
+  sglang_bbuf bash -lc '
+    cd "$SCRIPT_DIR"
+    python3 analyze_llm_torch_profile.py \
+      --framework trtllm \
+      --mapping-input "$TRT_MAPPING_DIR" \
+      --formal-input "$TRT_FORMAL_DIR" \
+      >"$TRT_ANALYSIS"
+  '
 
 echo "MODEL_ROOT=$MODEL_ROOT"
 echo "ANALYSIS_SGLANG=$SGLANG_ANALYSIS"
