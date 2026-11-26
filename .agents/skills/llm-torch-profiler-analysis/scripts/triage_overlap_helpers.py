@@ -1410,8 +1410,11 @@ def sample_source_map_events(
         if len(items) <= per_name_limit:
             sampled.extend(items)
             continue
+        if per_name_limit == 1:
+            sampled.append(items[0])
+            continue
         for sample_idx in range(per_name_limit):
-            pos = round(sample_idx * (len(items) - 1) / (per_name_limit - 1))
+            pos = sample_idx * (len(items) - 1) // (per_name_limit - 1)
             sampled.append(items[pos])
     sampled.sort(key=lambda event: (event.ts, event.idx))
     return sampled

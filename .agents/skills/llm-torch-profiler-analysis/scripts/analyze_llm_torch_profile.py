@@ -409,7 +409,7 @@ def sample_kernels_for_mapping(
             sampled.append(items[0])
             continue
         for sample_idx in range(per_name_limit):
-            pos = round(sample_idx * (len(items) - 1) / (per_name_limit - 1))
+            pos = sample_idx * (len(items) - 1) // (per_name_limit - 1)
             sampled.append(items[pos])
     sampled.sort(key=lambda kernel: (kernel.ts, kernel.name))
     return sampled
