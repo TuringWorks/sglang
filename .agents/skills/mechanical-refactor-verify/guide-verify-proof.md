@@ -27,7 +27,7 @@
   and never a sample; run the chain verifier over the whole chain:
 
   ```bash
-  python3 .claude/skills/mechanical-refactor-verify/scripts/mechanical_refactor_reproduction_cli.py \
+  python3 .agents/skills/mechanical-refactor-verify/scripts/mechanical_refactor_reproduction_cli.py \
       --base <base-commit> --branch <pr-branch-name> --proof <folder>
   ```
 
@@ -60,7 +60,7 @@
     - Read the commit's diff for relocated code. Concretely, run
       `git show <sha> --color-moved=dimmed-zebra --color-moved-ws=allow-indentation-change`
       and look for moved blocks, and run
-      `python3 .claude/skills/mechanical-refactor-verify/scripts/mechanical_refactor_proof_generator.py <sha>`
+      `python3 .agents/skills/mechanical-refactor-verify/scripts/mechanical_refactor_proof_generator.py <sha>`
       to see what a relocation recipe would cover.
     - A hidden provable part is not a judgement call: demand the split
       (`guide-split.md` §2.2) — do not approve the commit as-is.
@@ -82,6 +82,11 @@
 
 ### 2.1 Re-run it
 
+Proof scripts are executable code. Inspect the generated script and its imported utility
+before running it; a throwaway worktree isolates repository changes but does not sandbox
+Python, network access, or subprocesses. For proofs from an untrusted source, run the
+verification in a disposable container or VM with only the required repository checkout.
+
 - From the repo root:
 
   ```bash
@@ -91,9 +96,10 @@
 - When the proof arrived as a gist (`guide-construct-proof.md` §1.3), download it first:
 
   ```bash
-  gh gist clone <gist_id> /tmp/proof        # or: git clone https://gist.github.com/<gist_id>.git /tmp/proof
+  proof_dir=$(mktemp -d "${TMPDIR:-/tmp}/mechanical-proof.XXXXXX")
+  gh gist clone <gist_id> "$proof_dir"  # or: git clone https://gist.github.com/<gist_id>.git "$proof_dir"
   cd <repo-root>                            # the run resolves the repo from the cwd
-  python3 /tmp/proof/<sha>.py               # PASS = byte-identical to this commit
+  python3 "$proof_dir/<sha>.py"             # PASS = byte-identical to this commit
   ```
 
 - The run *is* the proof — it replays the primitives from the base commit and byte-diffs
