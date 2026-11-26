@@ -1254,12 +1254,30 @@ def build_kernel_source_map(
     )
     correlation_external = build_correlation_external_lookup(mapping_bundle.raw_events)
     launch_contexts_by_correlation = build_launch_contexts(mapping_bundle.raw_events)
+    launch_context_by_event: Dict[int, LaunchContext] = {}
     fallback_queries = [
         (event.idx, event.ts)
         for event in sampled_events
         if event.external_id is None
         or not contexts_by_external_id.get(event.external_id)
     ]
+    for event in sampled_events:
+        if event.external_id is not None and contexts_by_external_id.get(
+            event.external_id
+        ):
+            continue
+        launch_context = (
+            choose_launch_context(
+                launch_contexts_by_correlation.get(event.correlation, []), event.ts
+            )
+            if event.correlation is not None
+            else None
+        )
+        if launch_context is not None:
+            launch_context_by_event[event.idx] = launch_context
+            # Use a distinct negative query id so the launch-time lookup can be
+            # batched with the event-time fallback without overwriting either result.
+            fallback_queries.append((-(event.idx + 1), launch_context.ts))
     temporal_scope_lookup = build_temporal_scope_lookup_from_raw_events(
         mapping_bundle.raw_events,
         fallback_queries,
@@ -1290,18 +1308,9 @@ def build_kernel_source_map(
             launch_op = canonicalize_cpu_op_name(cpu_context.cpu_op_name)
             scope_chain = cpu_context.scope_chain
         else:
-            launch_context = (
-                choose_launch_context(
-                    launch_contexts_by_correlation.get(event.correlation, []), event.ts
-                )
-                if event.correlation is not None
-                else None
-            )
+            launch_context = launch_context_by_event.get(event.idx)
             if launch_context is not None:
-                scope_chain = build_temporal_scope_lookup_from_raw_events(
-                    mapping_bundle.raw_events,
-                    [(event.idx, launch_context.ts)],
-                ).get(event.idx, ())
+                scope_chain = temporal_scope_lookup.get(-(event.idx + 1), ())
                 if scope_chain:
                     launch_op = canonicalize_cpu_op_name(launch_context.launch_name)
             if not scope_chain:
