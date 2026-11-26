@@ -12,7 +12,7 @@
 
 ```bash
 # a range: write a self-contained folder for every mechanical_provable commit
-python3 .claude/skills/mechanical-refactor-verify/scripts/mechanical_refactor_proof_generator.py \
+python3 .agents/skills/mechanical-refactor-verify/scripts/mechanical_refactor_proof_generator.py \
     <base>..<tip> --match '(?<!_)mechanical_provable' --out repro_out
 ```
 
@@ -77,7 +77,7 @@ gh gist create --desc "mechanical-move proof for PR #NNNN" \
 
 ```bash
 # one commit: print the inferred script and run it (non-zero exit unless PASS)
-python3 .claude/skills/mechanical-refactor-verify/scripts/mechanical_refactor_proof_generator.py <commit>
+python3 .agents/skills/mechanical-refactor-verify/scripts/mechanical_refactor_proof_generator.py <commit>
 ```
 
 #### 2.2.1 What the inference covers
@@ -136,7 +136,7 @@ python3 .claude/skills/mechanical-refactor-verify/scripts/mechanical_refactor_pr
 import sys
 from pathlib import Path
 
-sys.path.append(".claude/skills/mechanical-refactor-verify/scripts")
+sys.path.append(".agents/skills/mechanical-refactor-verify/scripts")
 from mechanical_refactor_reproduction_utils import Repro
 
 r = Repro(base="<base_sha>", target="<commit>")
@@ -159,7 +159,7 @@ r.run()   # PASS = byte-identical; otherwise prints the residual
 import sys
 from pathlib import Path
 
-sys.path.append(".claude/skills/mechanical-refactor-verify/scripts")
+sys.path.append(".agents/skills/mechanical-refactor-verify/scripts")
 from mechanical_refactor_reproduction_utils import verify_mechanical_refactor, git_add_and_commit
 
 BASE_COMMIT = "<base_sha>"

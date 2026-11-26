@@ -192,6 +192,7 @@ fi
 if [[ -z "${HUGGINGFACE_HUB_TOKEN:-}" ]]; then
   HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
 fi
+export HF_TOKEN HUGGINGFACE_HUB_TOKEN
 
 if [[ -z "$MODEL" || -z "$RUN_DIR" || -z "$PORT" || -z "$GPUS" ]]; then
   usage >&2
@@ -233,7 +234,8 @@ if [[ -z "$CONTAINER_NAME" ]]; then
   fi
 fi
 
-docker exec sglang_bbuf bash -lc "mkdir -p '$PROFILE_DIR'"
+docker exec -e PROFILE_DIR="$PROFILE_DIR" sglang_bbuf \
+  bash -lc 'mkdir -p "$PROFILE_DIR"'
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
 profiler_config=$(python3 - <<PY
@@ -253,8 +255,8 @@ docker_args=(
   --ipc=host
   --network host
   -e "CUDA_VISIBLE_DEVICES=$GPUS"
-  -e "HF_TOKEN=$HF_TOKEN"
-  -e "HUGGINGFACE_HUB_TOKEN=$HUGGINGFACE_HUB_TOKEN"
+  -e HF_TOKEN
+  -e HUGGINGFACE_HUB_TOKEN
   -e "VLLM_RPC_TIMEOUT=1800000"
   -v "$HF_CACHE:/root/.cache/huggingface"
   -v "$RUN_DIR:$RUN_DIR"
@@ -333,9 +335,12 @@ python3 "$SCRIPT_DIR/probe_llm_server.py" \
   --framework vllm \
   --url "http://127.0.0.1:${PORT}" \
   --model "$MODEL" \
-  | docker exec -i sglang_bbuf bash -lc "cat > '$BENCHMARK_PATH'" >/dev/null
+  | docker exec -i -e BENCHMARK_PATH="$BENCHMARK_PATH" sglang_bbuf \
+      bash -lc 'cat > "$BENCHMARK_PATH"' >/dev/null
 
-docker logs "$CONTAINER_NAME" 2>&1 | docker exec -i sglang_bbuf bash -lc "cat > '$LOG_PATH'" || true
+docker logs "$CONTAINER_NAME" 2>&1 \
+  | docker exec -i -e LOG_PATH="$LOG_PATH" sglang_bbuf \
+      bash -lc 'cat > "$LOG_PATH"' || true
 sed -n '1,240p' "$ANALYSIS_PATH"
 echo "PROFILE_DIR=$PROFILE_DIR"
 echo "LOG_PATH=$LOG_PATH"

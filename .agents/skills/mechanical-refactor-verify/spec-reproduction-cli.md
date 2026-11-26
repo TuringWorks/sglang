@@ -58,7 +58,7 @@
 ### 3.1 Invocation
 
 ```bash
-python3 .claude/skills/mechanical-refactor-verify/scripts/mechanical_refactor_reproduction_cli.py \
+python3 .agents/skills/mechanical-refactor-verify/scripts/mechanical_refactor_reproduction_cli.py \
     --base <base-commit> --branch <pr-branch-name> --proof path/to/proof/folder
 ```
 

@@ -477,7 +477,13 @@ def _linear_commits(*, base_sha: str, branch_sha: str, root: str) -> "list[str]"
             f"base {base_sha[:12]} is not an ancestor of branch {branch_sha[:12]}"
         )
     commits = _git_output(
-        ["rev-list", "--reverse", f"{base_sha}..{branch_sha}"], root
+        [
+            "rev-list",
+            "--reverse",
+            "--end-of-options",
+            f"{base_sha}..{branch_sha}",
+        ],
+        root,
     ).split()
     if not commits:
         raise ChainVerificationError(

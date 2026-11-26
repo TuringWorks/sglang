@@ -37,7 +37,7 @@ def _write(repo: Path, **files: str | None) -> None:
     for name, content in files.items():
         path = repo / name.replace("__", "/")
         if content is None:
-            path.unlink()
+            path.unlink(missing_ok=True)
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)

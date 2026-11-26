@@ -77,7 +77,15 @@ def _def_indent(lines: list[str], name: str) -> int | None:
 def _per_file_diff(commit: str, root: str) -> dict[str, dict]:
     """Per-file removed/added content lines (whitespace intact) and a new-file flag."""
     out = _git_output(
-        ["show", commit, "--format=", "--no-color", "--no-ext-diff"], root
+        [
+            "show",
+            "--format=",
+            "--no-color",
+            "--no-ext-diff",
+            "--end-of-options",
+            commit,
+        ],
+        root,
     )
     files: dict[str, dict] = {}
     path: str | None = None
@@ -143,7 +151,7 @@ def _delegate_stub_attr(tree: ast.AST, name: str) -> tuple[str, str] | None:
             and node.body[0].value.func.value.value.id == "self"
         ):
             return (node.body[0].value.func.value.attr, node.body[0].value.func.attr)
-        return None
+        continue
     return None
 
 
@@ -1353,7 +1361,9 @@ def generate_range(
     record PASS / residual. Writes output.log + output.html and copies the reproduce util
     so the folder is self-contained."""
     root = repo_root or _repo_root()
-    commits = _git_output(["rev-list", "--reverse", rev_range], root).split()
+    commits = _git_output(
+        ["rev-list", "--reverse", "--end-of-options", rev_range], root
+    ).split()
     pattern = re.compile(match) if match else None
 
     out = Path(out_dir)

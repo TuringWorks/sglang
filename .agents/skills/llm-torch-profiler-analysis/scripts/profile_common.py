@@ -755,7 +755,7 @@ def build_probe_plan(
             prompt=prompt,
             capture_max_new_tokens=max_new_tokens,
             capture_requests=requested_probes,
-            warmup_max_new_tokens=max(1, warmup_steps),
+            warmup_max_new_tokens=max_new_tokens,
             warmup_requests=1 if warmup_steps else 0,
         )
     return ProbePlan(
